@@ -9,71 +9,60 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Extract project ZIP
-        run: |
-          unzip -o STX_Horror_Animator.zip -d extracted
-          echo "Extracted files:"
-          find extracted -maxdepth 3 -type f | head -100
-
-      - name: Find Android project
-        run: |
-          PROJECT_DIR=$(find extracted -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1 | xargs dirname)
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Android project found at: $PROJECT_DIR"
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
-        run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-34"
-          sdkmanager "build-tools;34.0.0"
-          yes | sdkmanager --licenses || true
-
-      - name: Set up Gradle 8.9
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      - name: Download dependencies
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Find Android project
         run: |
-          gradle --no-daemon --stacktrace --refresh-dependencies \
-            :app:dependencies \
-            --configuration debugRuntimeClasspath
+          unzip -q STX_Horror_Animator.zip -d project
+          PROJECT_DIR=$(find project -name settings.gradle.kts -o -name settings.gradle | head -n 1 | xargs dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Android Gradle project not found!"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project: $PROJECT_DIR"
+
+      - name: Check Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          sdkmanager --list_installed | head -100 || true
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          gradle --no-daemon --stacktrace \
-            :app:assembleDebug
+          gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: Find APK
         id: apk
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          APK=$(find app/build/outputs/apk/debug -type f -name "*.apk" | head -n 1)
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "APK was not generated."
+            echo "APK not found!"
             exit 1
           fi
 
-          echo "APK: $APK"
+          echo "APK found: $APK"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
